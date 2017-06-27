@@ -53,9 +53,9 @@ impl WebSocketFrameHeader {
 	}
 
 	fn determine_len(len: usize) -> u8 {
-		if len < PAYLOAD_LEN_U16 {
+		if len < PAYLOAD_LEN_U16 as usize {
 			len as u8
-		} else if len < (u16::MAX as usize) {
+		} else if len < u16::max_value() as usize {
 			PAYLOAD_LEN_U16
 		} else {
 			PAYLOAD_LEN_U64
@@ -153,7 +153,9 @@ impl<'a> From<&'a str> for WebSocketFrame {
 			payload: Vec::from(payload)
 		}
 	}
+}
 
+impl WebSocketFrame {
 	fn serialise_header(hdr: &WebSocketFrameHeader) -> u16 {
 		let b1 = ((hdr.fin as u8) << 7)
 			| ((hdr.rsv1 as u8) << 6)
@@ -161,7 +163,7 @@ impl<'a> From<&'a str> for WebSocketFrame {
 			| ((hdr.rsv3 as u8) << 4)
 			| ((hdr.opcode as u8) & 0x0F);
 		let b2 = ((hdr.masked as u8) << 7)
-			| ((hdr.payload_len as u8) & 0x7F);
+			| ((hdr.payload_length as u8) & 0x7F);
 		((b1 as u16) << 8) | (b2 as u16)
 	}
 
@@ -170,8 +172,8 @@ impl<'a> From<&'a str> for WebSocketFrame {
 		try!(output.write_u16::<BigEndian>(hdr));
 
 		match self.header.payload_length {
-			PAYLOAD_LEN_U16 => try!(output.write_u16::<BigEndian>(payload.len() as u16)),
-			PAYLOAD_LEN_U64 => try!(output.write_u64::<BigEndian>(payload.len() as u64)),
+			PAYLOAD_LEN_U16 => try!(output.write_u16::<BigEndian>(self.payload.len() as u16)),
+			PAYLOAD_LEN_U64 => try!(output.write_u64::<BigEndian>(self.payload.len() as u64)),
 			_ => {}
 		}
 

@@ -120,7 +120,7 @@ impl WebSocketClient {
 		match self.state {
 			ClientState::HandshakeResponse => self.write_handshake(),
 			ClientState::Connected => {
-				println!("Sending {} frames", outgoing.len());
+				println!("Sending {} frames", self.outgoing.len());
 
 				for frame in self.outgoing.iter() {
 					if let Err(e) = frame.write(&mut self.socket) {
