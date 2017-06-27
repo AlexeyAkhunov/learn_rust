@@ -1,8 +1,8 @@
 use std::{io, iter};
-use std::io::{Read, ErrorKind};
+use std::io::{Read, Write, ErrorKind};
 use std::error::Error;
 
-use byteorder::{ReadBytesExt, BigEndian};
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 const PAYLOAD_LEN_U16: u8 = 126;
 const PAYLOAD_LEN_U64: u8 = 127;
@@ -39,6 +39,28 @@ pub struct WebSocketFrameHeader {
 	masked: bool,
 	opcode: OpCode,
 	payload_length: u8
+}
+
+impl WebSocketFrameHeader {
+	fn new_header(len: usize, opcode: OpCode) -> WebSocketFrameHeader {
+		WebSocketFrameHeader {
+			fin: true,
+			rsv1: false, rsv2: false, rsv3: false,
+			masked: false,
+			payload_length: Self::determine_len(len),
+			opcode: opcode
+		}
+	}
+
+	fn determine_len(len: usize) -> u8 {
+		if len < PAYLOAD_LEN_U16 {
+			len as u8
+		} else if len < (u16::MAX as usize) {
+			PAYLOAD_LEN_U16
+		} else {
+			PAYLOAD_LEN_U64
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -120,5 +142,40 @@ impl WebSocketFrame {
 			PAYLOAD_LEN_U16 => input.read_u16::<BigEndian>().map(|v| v as usize).map_err(From::from),
 			_ => Ok(payload_len as usize)
 		}
+	}
+}
+
+impl<'a> From<&'a str> for WebSocketFrame {
+	fn from(payload: &str) -> WebSocketFrame {
+		WebSocketFrame{
+			header: WebSocketFrameHeader::new_header(payload.len(), OpCode::TextFrame),
+			mask: None,
+			payload: Vec::from(payload)
+		}
+	}
+
+	fn serialise_header(hdr: &WebSocketFrameHeader) -> u16 {
+		let b1 = ((hdr.fin as u8) << 7)
+			| ((hdr.rsv1 as u8) << 6)
+			| ((hdr.rsv2 as u8) << 5)
+			| ((hdr.rsv3 as u8) << 4)
+			| ((hdr.opcode as u8) & 0x0F);
+		let b2 = ((hdr.masked as u8) << 7)
+			| ((hdr.payload_len as u8) & 0x7F);
+		((b1 as u16) << 8) | (b2 as u16)
+	}
+
+	pub fn write<W: Write>(&self, output: &mut W) -> io::Result<()> {
+		let hdr = Self::serialise_header(&self.header);
+		try!(output.write_u16::<BigEndian>(hdr));
+
+		match self.header.payload_length {
+			PAYLOAD_LEN_U16 => try!(output.write_u16::<BigEndian>(payload.len() as u16)),
+			PAYLOAD_LEN_U64 => try!(output.write_u64::<BigEndian>(payload.len() as u64)),
+			_ => {}
+		}
+
+		try!(output.write(&self.payload));
+		Ok(())
 	}
 }
