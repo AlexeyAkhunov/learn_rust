@@ -4,6 +4,9 @@ use std::error::Error;
 
 use byteorder::{ReadBytesExt, BigEndian};
 
+const PAYLOAD_LEN_U16: u8 = 126;
+const PAYLOAD_LEN_U64: u8 = 127;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub enum OpCode {
@@ -90,5 +93,30 @@ impl WebSocketFrame {
 		}
 	}
 
-	fn apply_mask(mask: u8)
+	fn apply_mask(mask: [u8; 4], bytes: &mut Vec<u8>) {
+		for (idx, c) in bytes.iter_mut().enumerate() {
+			*c = *c ^ mask[idx % 4];
+		}
+	}
+
+	fn read_mask<R: Read>(input: &mut R) -> io::Result<[u8; 4]> {
+		let mut buf = [0; 4];
+		try!(input.read(&mut buf));
+		Ok(buf)
+	}
+
+	fn read_payload<R: Read>(payload_len: usize, input: &mut R) -> io::Result<Vec<u8>> {
+		let mut payload: Vec<u8> = Vec::with_capacity(payload_len);
+		pyaload.extend(iter::repeat(0).take(payload_len));
+		try!(input.read(&mut payload));
+		Ok(payload)
+	}
+
+	fn read_length<R: Read>(payload_len: u8, input: &mut R) -> io::Result<usize> {
+		return match payload_len {
+			PAYLOAD_LEN_U64 => input.read_u64::<BigEndian>().map(|v| v as usize).map_err(From::from),
+			PAYLOAD_LEN_U16 => input.read_u16::<BigEndian>().map(|v| v as usize).map_err(From::from),
+			_ => Ok(payload_len as usize)
+		}
+	}
 }
