@@ -1,18 +1,22 @@
 extern crate mio;
+extern crate sha1;
+extern crate rustc_serialize;
+extern crate http_muncher;
+extern crate byteorder;
+
 use mio::{Token,PollOpt,Ready};
 use mio::deprecated::{EventLoop, Handler};
 use std::net::SocketAddr;
 use mio::tcp::{TcpListener, TcpStream};
 use std::collections::HashMap;
-extern crate http_muncher;
 use http_muncher::{Parser, ParserHandler};
 use std::io::{Read, Write};
-extern crate sha1;
-extern crate rustc_serialize;
 use rustc_serialize::base64::{ToBase64, STANDARD};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt;
+mod frame;
+use frame::WebSocketFrame;
 
 fn gen_key(key: &String) -> String {
 	let mut m = sha1::Sha1::new();
@@ -64,6 +68,13 @@ impl WebSocketClient {
 			ClientState::AwaitingHandshake(_) => {
 				self.read_handshake();
 			},
+			ClientState::Connected => {
+				let frame = WebSocketFrame::read(&mut self.socket);
+				match frame {
+					Ok(frame) => println!("{:?}", frame),
+					Err(e) => println!("error while reading frame: {}", e)
+				}
+			}
 			_ => {}
 		}
 	}

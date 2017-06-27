@@ -1,5 +1,5 @@
-use std::io;
-use std::io::Read;
+use std::{io, iter};
+use std::io::{Read, ErrorKind};
 use std::error::Error;
 
 use byteorder::{ReadBytesExt, BigEndian};
@@ -18,7 +18,7 @@ pub enum OpCode {
 }
 
 impl OpCode {
-	fun from(op: u8) -> Option<OpCode> {
+	fn from(op: u8) -> Option<OpCode> {
 		match op {
 			1 => Some(OpCode::TextFrame),
 			2 => Some(OpCode::BinaryFrame),
@@ -30,6 +30,7 @@ impl OpCode {
 	}
 }
 
+#[derive(Debug)]
 pub struct WebSocketFrameHeader {
 	fin: bool,
 	rsv1: bool,
@@ -40,6 +41,7 @@ pub struct WebSocketFrameHeader {
 	payload_length: u8
 }
 
+#[derive(Debug)]
 pub struct WebSocketFrame {
 	header: WebSocketFrameHeader,
 	mask: Option<[u8; 4]>,
@@ -49,7 +51,7 @@ pub struct WebSocketFrame {
 impl WebSocketFrame {
 	pub fn read<R: Read>(input: &mut R) -> io::Result<WebSocketFrame> {
 		let buf = try!(input.read_u16::<BigEndian>());
-		let header = Self::parse_header(buf);
+		let header = try!(Self::parse_header(buf).map_err(|s| io::Error::new(ErrorKind::Other, s)));
 
 		let len = try!(Self::read_length(header.payload_length, input));
 		let mask_key = if header.masked {
@@ -107,7 +109,7 @@ impl WebSocketFrame {
 
 	fn read_payload<R: Read>(payload_len: usize, input: &mut R) -> io::Result<Vec<u8>> {
 		let mut payload: Vec<u8> = Vec::with_capacity(payload_len);
-		pyaload.extend(iter::repeat(0).take(payload_len));
+		payload.extend(iter::repeat(0).take(payload_len));
 		try!(input.read(&mut payload));
 		Ok(payload)
 	}
