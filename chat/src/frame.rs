@@ -143,19 +143,7 @@ impl WebSocketFrame {
 			_ => Ok(payload_len as usize)
 		}
 	}
-}
 
-impl<'a> From<&'a str> for WebSocketFrame {
-	fn from(payload: &str) -> WebSocketFrame {
-		WebSocketFrame{
-			header: WebSocketFrameHeader::new_header(payload.len(), OpCode::TextFrame),
-			mask: None,
-			payload: Vec::from(payload)
-		}
-	}
-}
-
-impl WebSocketFrame {
 	fn serialise_header(hdr: &WebSocketFrameHeader) -> u16 {
 		let b1 = ((hdr.fin as u8) << 7)
 			| ((hdr.rsv1 as u8) << 6)
@@ -179,5 +167,44 @@ impl WebSocketFrame {
 
 		try!(output.write(&self.payload));
 		Ok(())
+	}
+
+	pub fn pong(ping_frame: &WebSocketFrame) -> WebSocketFrame {
+		let payload = ping_frame.payload.clone();
+		WebSocketFrame {
+			header: WebSocketFrameHeader::new_header(payload.len(), OpCode::Pong),
+			mask: None,
+			payload: payload
+		}
+	}
+
+	pub fn close_from(recv_frame: &WebSocketFrame) -> WebSocketFrame {
+		let body = if recv_frame.payload.len() > 0 {
+			let status_code = recv_frame.payload[0..2];
+			let mut body = Vec::with_capacity(2);
+			body.write(status_code);
+			body
+		} else {
+			Vec::new()
+		};
+		WebSocketFrame {
+			header: WebSocketFrameHeader::new_header(body.len(), OpCode::ConnectionClose),
+			mask: None,
+			payload: body
+		}
+	}
+
+	pub fn is_close() -> bool {
+		self.header.OpCode == OpCode::ConnectionClose
+	}
+}
+
+impl<'a> From<&'a str> for WebSocketFrame {
+	fn from(payload: &str) -> WebSocketFrame {
+		WebSocketFrame{
+			header: WebSocketFrameHeader::new_header(payload.len(), OpCode::TextFrame),
+			mask: None,
+			payload: Vec::from(payload)
+		}
 	}
 }

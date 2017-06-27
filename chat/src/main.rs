@@ -66,28 +66,38 @@ struct WebSocketClient {
 impl WebSocketClient {
 	fn read(&mut self) {
 		match self.state {
-			ClientState::AwaitingHandshake(_) => {
-				self.read_handshake();
-			},
-			ClientState::Connected => {
-				let frame = WebSocketFrame::read(&mut self.socket);
-				match frame {
-					Ok(frame) => {
+			ClientState::AwaitingHandshake(_) => self.read_handshake(),
+			ClientState::Connected => self.read_frame(),
+			_ => {}
+		}
+	}
+
+	fn read_frame(&mut self) {
+		let frame = WebSocketFrame::read(&mut self.socket);
+		match frame {
+			Ok(frame) => {
+				match frame.get_opcode() {
+					OpCode::TextFrame => {
 						println!("{:?}", frame);
 
 						let reply_frame = WebSocketFrame::from("Hi there!");
-						self.outgoing.push(reply_frame);
-
-						if self.outgoing.len() > 0 {
-							self.interest.remove(Ready::readable());
-							self.interest.insert(Ready::writable());
-						}
+						self.outgoing.push(reply_frame);						
+					},
+					OpCode::Ping => {
+						println!("ping/pong");
+						self.outgoing.push(WebSocketFrame::pong(&frame));
+					},
+					OpCode::ConnectionClose => {
+						self.outgoing.push(WebSocketFrame::close_from(&frame));
 					}
-					Err(e) => println!("error while reading frame: {}", e)
+					_ => {}
 				}
+
+				self.interest.remove(Ready::readable());
+				self.interest.insert(Ready::writable());
 			}
-			_ => {}
-		}
+			Err(e) => println!("error while reading frame: {}", e)
+		}		
 	}
 
 	fn read_handshake(&mut self) {
@@ -120,18 +130,26 @@ impl WebSocketClient {
 		match self.state {
 			ClientState::HandshakeResponse => self.write_handshake(),
 			ClientState::Connected => {
+				let mut close_connection = false;
 				println!("Sending {} frames", self.outgoing.len());
 
 				for frame in self.outgoing.iter() {
 					if let Err(e) = frame.write(&mut self.socket) {
 						println!("error on write: {}", e);
 					}
+					if frame.is_close() {
+						close_connection = true;
+					}
 				}
 
 				self.outgoing.clear();
 
 				self.interest.remove(Ready::writable());
-				self.interest.insert(Ready::readable());
+				if close_connection {
+					self.interest.insert(Ready::hup());
+				} else {
+					self.interest.insert(Ready::readable());
+				}
 			},
 			_ => {}
 		}
@@ -210,6 +228,12 @@ impl Handler for WebSocketServer {
 			client.write();
 			event_loop.reregister(&client.socket, token, client.interest,
 				PollOpt::edge() | PollOpt::oneshot()).unwrap();
+		}
+		if events.is_hup() {
+			let client = self.clients.remove(&token).unwrap();
+
+			client.socket.shutdown(Shutdown::Both);
+			event_loop.deregister(&client.socket);
 		}
 	}
 }
